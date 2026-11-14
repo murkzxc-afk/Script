@@ -1,0 +1,457 @@
+-- StarterPlayer > StarterPlayerScripts > LocalScript (name it "DevMenu")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+----------------- CONFIG -----------------
+local STUDIO_ONLY = true          -- true: menu only exists in Studio. Set false to keep it in published game.
+local TOGGLE_KEY = Enum.KeyCode.M -- open / close menu
+local SPEED_RANGE = { 0, 200 }
+local JUMP_RANGE = { 0, 300 }
+------------------------------------------
+
+if STUDIO_ONLY and not RunService:IsStudio() then return end
+
+local localPlayer = Players.LocalPlayer
+
+-------------------- State --------------------
+local espEnabled = false
+local showNames = true
+local fillTransparency = 0.6
+local colorIndex = 1
+local walkSpeed = 16
+local jumpPower = 50
+local infJump = false
+local speedEnabled = false
+local jumpEnabled = false
+
+local COLORS = {
+	Color3.fromRGB(255, 80, 80),
+	Color3.fromRGB(70, 210, 130),
+	Color3.fromRGB(95, 130, 255),
+	Color3.fromRGB(255, 205, 70),
+	Color3.fromRGB(255, 255, 255),
+}
+
+-------------------- Highlight logic --------------------
+local effects = {}
+
+local function clearPlayer(plr)
+	local e = effects[plr]
+	if e then
+		if e.highlight then e.highlight:Destroy() end
+		if e.billboard then e.billboard:Destroy() end
+		effects[plr] = nil
+	end
+end
+
+local function applyPlayer(plr)
+	clearPlayer(plr)
+	if not espEnabled or plr == localPlayer then return end
+	local char = plr.Character
+	if not char then return end
+
+	local color = COLORS[colorIndex]
+	local h = Instance.new("Highlight")
+	h.FillColor = color
+	h.OutlineColor = color
+	h.FillTransparency = fillTransparency
+	h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	h.Adornee = char
+	h.Parent = char
+
+	local bb
+	local head = char:FindFirstChild("Head")
+	if showNames and head then
+		bb = Instance.new("BillboardGui")
+		bb.Size = UDim2.fromOffset(120, 24)
+		bb.StudsOffset = Vector3.new(0, 2.5, 0)
+		bb.AlwaysOnTop = true
+		bb.Adornee = head
+		bb.Parent = head
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = plr.DisplayName
+		label.TextColor3 = color
+		label.TextStrokeTransparency = 0.4
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 14
+		label.Parent = bb
+	end
+	effects[plr] = { highlight = h, billboard = bb }
+end
+
+local function refreshAll()
+	for _, plr in ipairs(Players:GetPlayers()) do applyPlayer(plr) end
+end
+
+local function track(plr)
+	plr.CharacterAdded:Connect(function()
+		task.wait(0.2)
+		applyPlayer(plr)
+	end)
+	applyPlayer(plr)
+end
+for _, plr in ipairs(Players:GetPlayers()) do track(plr) end
+Players.PlayerAdded:Connect(track)
+Players.PlayerRemoving:Connect(clearPlayer)
+
+-------------------- Movement logic --------------------
+local function getHumanoid()
+	local char = localPlayer.Character
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function applyMovement()
+	local hum = getHumanoid()
+	if not hum then return end
+	if speedEnabled then hum.WalkSpeed = walkSpeed end
+	if jumpEnabled then
+		hum.UseJumpPower = true
+		hum.JumpPower = jumpPower
+	end
+end
+
+localPlayer.CharacterAdded:Connect(function()
+	task.wait(0.2)
+	applyMovement()
+end)
+
+UserInputService.JumpRequest:Connect(function()
+	if infJump then
+		local hum = getHumanoid()
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+
+-------------------- UI helpers --------------------
+local BG = Color3.fromRGB(20, 20, 27)
+local PANEL = Color3.fromRGB(32, 32, 42)
+local PANEL_2 = Color3.fromRGB(44, 44, 58)
+local ACCENT = Color3.fromRGB(95, 130, 255)
+local TEXT = Color3.fromRGB(240, 240, 248)
+local MUTED = Color3.fromRGB(145, 145, 165)
+
+local function make(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do o[k] = v end
+	o.Parent = parent
+	return o
+end
+
+local function corner(o, r)
+	return make("UICorner", { CornerRadius = UDim.new(0, r or 8) }, o)
+end
+
+local function tween(o, t, props)
+	TweenService:Create(o, TweenInfo.new(t, Enum.EasingStyle.Quad), props):Play()
+end
+
+-------------------- Window --------------------
+local gui = make("ScreenGui", { Name = "DevMenu", ResetOnSpawn = false, DisplayOrder = 100 }, localPlayer:WaitForChild("PlayerGui"))
+
+local main = make("Frame", {
+	Size = UDim2.fromOffset(300, 470),
+	Position = UDim2.new(1, -320, 0.5, -235),
+	BackgroundColor3 = BG,
+	BorderSizePixel = 0,
+	Active = true,
+	Draggable = true,
+}, gui)
+corner(main, 14)
+make("UIStroke", { Color = Color3.fromRGB(62, 62, 80), Thickness = 1 }, main)
+
+local header = make("Frame", {
+	Size = UDim2.new(1, 0, 0, 46),
+	BackgroundColor3 = PANEL,
+	BorderSizePixel = 0,
+}, main)
+corner(header, 14)
+make("Frame", { -- squares off the bottom corners of the header
+	Size = UDim2.new(1, 0, 0, 14),
+	Position = UDim2.new(0, 0, 1, -14),
+	BackgroundColor3 = PANEL,
+	BorderSizePixel = 0,
+}, header)
+
+make("TextLabel", {
+	Size = UDim2.new(1, -60, 1, 0),
+	Position = UDim2.fromOffset(16, 0),
+	BackgroundTransparency = 1,
+	Text = "Dev Menu",
+	TextColor3 = TEXT,
+	Font = Enum.Font.GothamBold,
+	TextSize = 17,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, header)
+
+local closeBtn = make("TextButton", {
+	Size = UDim2.fromOffset(28, 28),
+	Position = UDim2.new(1, -40, 0, 9),
+	BackgroundColor3 = PANEL_2,
+	Text = "X",
+	TextColor3 = MUTED,
+	Font = Enum.Font.GothamBold,
+	TextSize = 13,
+	AutoButtonColor = false,
+}, header)
+corner(closeBtn, 8)
+closeBtn.MouseEnter:Connect(function() tween(closeBtn, 0.12, { BackgroundColor3 = Color3.fromRGB(220, 70, 70) }) end)
+closeBtn.MouseLeave:Connect(function() tween(closeBtn, 0.12, { BackgroundColor3 = PANEL_2 }) end)
+closeBtn.MouseButton1Click:Connect(function() main.Visible = false end)
+
+local content = make("ScrollingFrame", {
+	Size = UDim2.new(1, -20, 1, -58),
+	Position = UDim2.fromOffset(10, 52),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 3,
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	CanvasSize = UDim2.new(),
+}, main)
+make("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, content)
+make("UIPadding", { PaddingBottom = UDim.new(0, 8) }, content)
+
+local order = 0
+local function nextOrder()
+	order += 1
+	return order
+end
+
+local function section(title)
+	make("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 22),
+		BackgroundTransparency = 1,
+		Text = string.upper(title),
+		TextColor3 = ACCENT,
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = nextOrder(),
+	}, content)
+end
+
+local function card(height)
+	local f = make("Frame", {
+		Size = UDim2.new(1, -6, 0, height),
+		BackgroundColor3 = PANEL,
+		BorderSizePixel = 0,
+		LayoutOrder = nextOrder(),
+	}, content)
+	corner(f, 10)
+	return f
+end
+
+-------------------- Components --------------------
+local function toggle(parent, y, text, initial, callback)
+	make("TextLabel", {
+		Size = UDim2.new(1, -80, 0, 28),
+		Position = UDim2.fromOffset(12, y),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = TEXT,
+		Font = Enum.Font.Gotham,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, parent)
+
+	local trackBtn = make("TextButton", {
+		Size = UDim2.fromOffset(44, 22),
+		Position = UDim2.new(1, -56, 0, y + 3),
+		BackgroundColor3 = initial and ACCENT or PANEL_2,
+		Text = "",
+		AutoButtonColor = false,
+	}, parent)
+	corner(trackBtn, 11)
+	local knob = make("Frame", {
+		Size = UDim2.fromOffset(16, 16),
+		Position = initial and UDim2.fromOffset(25, 3) or UDim2.fromOffset(3, 3),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+	}, trackBtn)
+	corner(knob, 8)
+
+	local state = initial
+	trackBtn.MouseButton1Click:Connect(function()
+		state = not state
+		tween(trackBtn, 0.15, { BackgroundColor3 = state and ACCENT or PANEL_2 })
+		tween(knob, 0.15, { Position = state and UDim2.fromOffset(25, 3) or UDim2.fromOffset(3, 3) })
+		callback(state)
+	end)
+end
+
+local function slider(parent, y, text, min, max, initial, callback)
+	make("TextLabel", {
+		Size = UDim2.new(1, -90, 0, 20),
+		Position = UDim2.fromOffset(12, y),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = TEXT,
+		Font = Enum.Font.Gotham,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, parent)
+
+	local valueLabel = make("TextLabel", {
+		Size = UDim2.fromOffset(60, 20),
+		Position = UDim2.new(1, -72, 0, y),
+		BackgroundTransparency = 1,
+		Text = tostring(initial),
+		TextColor3 = MUTED,
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, parent)
+
+	local bar = make("TextButton", {
+		Size = UDim2.new(1, -24, 0, 8),
+		Position = UDim2.fromOffset(12, y + 30),
+		BackgroundColor3 = PANEL_2,
+		Text = "",
+		AutoButtonColor = false,
+	}, parent)
+	corner(bar, 4)
+
+	local fill = make("Frame", {
+		Size = UDim2.fromScale((initial - min) / (max - min), 1),
+		BackgroundColor3 = ACCENT,
+		BorderSizePixel = 0,
+	}, bar)
+	corner(fill, 4)
+
+	local knob = make("Frame", {
+		Size = UDim2.fromOffset(16, 16),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new((initial - min) / (max - min), 0, 0.5, 0),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+	}, bar)
+	corner(knob, 8)
+
+	local dragging = false
+	local function setFromX(x)
+		local alpha = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+		local value = math.floor(min + (max - min) * alpha + 0.5)
+		fill.Size = UDim2.fromScale(alpha, 1)
+		knob.Position = UDim2.new(alpha, 0, 0.5, 0)
+		valueLabel.Text = tostring(value)
+		callback(value)
+	end
+
+	bar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			main.Draggable = false
+			setFromX(input.Position.X)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			setFromX(input.Position.X)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+			main.Draggable = true
+		end
+	end)
+end
+
+-------------------- Section: Visuals --------------------
+section("Visuals")
+local visuals = card(176)
+
+toggle(visuals, 8, "Player Highlight", espEnabled, function(v)
+	espEnabled = v
+	refreshAll()
+end)
+toggle(visuals, 40, "Show Names", showNames, function(v)
+	showNames = v
+	refreshAll()
+end)
+
+make("TextLabel", {
+	Size = UDim2.new(1, -24, 0, 18),
+	Position = UDim2.fromOffset(12, 76),
+	BackgroundTransparency = 1,
+	Text = "Color",
+	TextColor3 = MUTED,
+	Font = Enum.Font.Gotham,
+	TextSize = 12,
+	TextXAlignment = Enum.TextXAlignment.Left,
+}, visuals)
+
+local strokes = {}
+for i, c in ipairs(COLORS) do
+	local s = make("TextButton", {
+		Size = UDim2.fromOffset(32, 32),
+		Position = UDim2.fromOffset(12 + (i - 1) * 40, 96),
+		BackgroundColor3 = c,
+		Text = "",
+		AutoButtonColor = false,
+	}, visuals)
+	corner(s, 8)
+	strokes[i] = make("UIStroke", { Color = Color3.new(1, 1, 1), Thickness = i == colorIndex and 2 or 0 }, s)
+	s.MouseButton1Click:Connect(function()
+		colorIndex = i
+		for j, st in ipairs(strokes) do st.Thickness = j == i and 2 or 0 end
+		refreshAll()
+	end)
+end
+
+slider(visuals, 134, "Fill Opacity", 0, 100, 40, function(v)
+	fillTransparency = 1 - v / 100
+	refreshAll()
+end)
+
+-------------------- Section: Movement --------------------
+section("Movement")
+local move = card(196)
+
+toggle(move, 8, "WalkSpeed Changer", speedEnabled, function(v)
+	speedEnabled = v
+	local hum = getHumanoid()
+	if hum then hum.WalkSpeed = v and walkSpeed or 16 end
+end)
+slider(move, 44, "WalkSpeed", SPEED_RANGE[1], SPEED_RANGE[2], walkSpeed, function(v)
+	walkSpeed = v
+	if speedEnabled then applyMovement() end
+end)
+
+toggle(move, 92, "JumpPower Changer", jumpEnabled, function(v)
+	jumpEnabled = v
+	local hum = getHumanoid()
+	if hum then
+		hum.UseJumpPower = true
+		hum.JumpPower = v and jumpPower or 50
+	end
+end)
+slider(move, 128, "JumpPower", JUMP_RANGE[1], JUMP_RANGE[2], jumpPower, function(v)
+	jumpPower = v
+	if jumpEnabled then applyMovement() end
+end)
+
+local jumpCard = card(44)
+toggle(jumpCard, 8, "Infinite Jump", infJump, function(v)
+	infJump = v
+end)
+
+make("TextLabel", {
+	Size = UDim2.new(1, 0, 0, 20),
+	BackgroundTransparency = 1,
+	Text = "Press " .. TOGGLE_KEY.Name .. " to show / hide",
+	TextColor3 = MUTED,
+	Font = Enum.Font.Gotham,
+	TextSize = 11,
+	LayoutOrder = nextOrder(),
+}, content)
+
+-------------------- Show / hide --------------------
+UserInputService.InputBegan:Connect(function(input)
+	if input.KeyCode == TOGGLE_KEY and not UserInputService:GetFocusedTextBox() then
+		main.Visible = not main.Visible
+	end
+end)
